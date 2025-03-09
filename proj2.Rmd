@@ -68,21 +68,23 @@ df <- data %>%
 
 km_fit <- survfit(Surv(menopause_time, menopause) ~ 1, data = df)
 
-# Display survival estimates in a table
-km_table <- data.frame(time = km_fit$time,
-                  n.risk = km_fit$n.risk,
-                  n.event = km_fit$n.event,
-                  n.censor = km_fit$n.censor,
-                  surv = km_fit$surv,
-                  upper = km_fit$upper,
-                  lower = km_fit$lower)
+# Extract survival data from the Kaplan-Meier fit
+km_data <- data.frame(time = km_fit$time,
+                      survival = km_fit$surv,
+                      lower = km_fit$lower,
+                      upper = km_fit$upper)
 
-#median_time <- summary(km_fit)$table["median"]
-
-# Plot Kaplan-Meier Curve
-ggsurvplot(km_fit, data = df, conf.int = TRUE, 
-           ggtheme = theme_classic(), xlab="Time to Menopause (years)", 
-           ylab="Survival Probability")
+# KM survival curve
+ggplot(km_data, aes(x = time, y = survival)) +
+  geom_step(size = 1, color = "#2C3E50") + 
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = "#BDC3C7", alpha = 0.3) +
+  scale_y_continuous(limits = c(0:1))+
+  labs(x = "Time to Menopause (years)",
+       y = "Survival Probability") +
+  scale_x_continuous(breaks = seq(0, 6, by=1))+
+  theme_classic() +  
+  theme(axis.text = element_text(size = 10),
+        axis.title = element_text(size = 12))
 
 cat("Estimated median time to menopause (Kaplan-Meier):", summary(km_fit)$table["median"], "\n")
 ```
@@ -94,10 +96,8 @@ cox_model <- coxph(Surv(menopause_time, menopause) ~ race + education + intake_a
 # Display model summary
 summary(cox_model)
 
-# Check the proportional hazards assumption
-cox.zph_test = cox.zph(cox_model)
-
 # Plot Schoenfeld residuals to visualize proportional hazards assumption
+cox.zph_test <- cox.zph(cox_model)
 ggcoxzph(cox.zph_test)
 
 ```
@@ -105,19 +105,24 @@ ggcoxzph(cox.zph_test)
 
 ```{r B3}
 ### (III) Compute Kaplan-Meier for menopause_age
-km_fit_age <- survfit(Surv(menopause_age, menopause) ~ 1, data = df)
+km_fit_age <- survfit(Surv(intake_age, menopause_age, menopause) ~ 1, data = df)
 
-# Kaplan-Meier Table
-summary(km_fit_age)
-km_age_table <- data.frame(time = km_fit_age$time, 
-                           survival = km_fit_age$surv, 
-                           lower = km_fit_age$lower, 
-                           upper = km_fit_age$upper)
+# Extract survival data from the Kaplan-Meier fit
+km_data <- data.frame(time = km_fit_age$time,
+                      survival = km_fit_age$surv,
+                      lower = km_fit_age$lower,
+                      upper = km_fit_age$upper)
 
-# Kaplan-Meier Plot for menopause_age
-ggsurvplot(km_fit_age, data = df, conf.int = TRUE, 
-           ggtheme = theme_classic(), xlab="Menopause Age (years)", 
-           ylab="Survival Probability")
+# Plot using ggplot
+ggplot(km_data, aes(x = time, y = survival)) +
+  geom_step(size = 1, color = "#2C3E50") +  # Survival curve
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = "#BDC3C7", alpha = 0.3) +  # Confidence interval shading
+  scale_x_continuous(breaks = seq(44, 60, by = 1), limits = c(44, 60)) +  
+  labs(x = "Menopause Age (years)",
+       y = "Survival Probability") +
+  theme_classic() +
+  theme(axis.text = element_text(size = 10),
+        axis.title = element_text(size = 12))
 
 cat("Estimated median menopause age (Kaplan-Meier):", summary(km_fit_age)$table["median"], "years.\n")
 
@@ -130,25 +135,26 @@ cat("Estimated Median (Exponential Model):", median_exp, "years.\n")
 
 ```{r B4}
 ### (IV) Test for Survival Differences by Race
-km_fit_race <- survfit(Surv(menopause_age, menopause) ~ race, data = df)
+# KM curves handling Left Truncation
+km_fit_race <- survfit(Surv(intake_age, menopause_age, menopause) ~ race, data = df)
+
 summary(km_fit_race)
-ggsurvplot(km_fit_race, data = df, conf.int = TRUE, 
+km_plot <- ggsurvplot(km_fit_race, data = df, conf.int = TRUE, 
            ggtheme = theme_classic(), xlab="Menopause Age (years)", 
-           ylab="Survival Probability", legend.title="Race", legend.labs=c("White", "Black", "Other"))
+           ylab="Survival Probability", xlim=c(44,60),
+           legend.title="Race", legend.labs=c("White", "Black", "Other"))
+km_plot$plot +
+  scale_x_continuous(breaks = seq(44, 60, by = 1)) 
 
 # Generalized Log-rank test
 ## Gehan-Breslow-Wilcoxon Test (Early Failures Weighted Higher)
-survdiff_test <- survdiff(Surv(menopause_age, menopause) ~ race, data = df, rho = 1)
-print(survdiff_test)
-
-# Cox score test
-cox_model_age <- coxph(Surv(menopause_age, menopause) ~ race + intake_age, data = df)
-summary(cox_model_age)
+survdiff(Surv(menopause_age, menopause) ~ race, data = df, rho = 1)
+#race not significant
 ```
 
 ```{r B5}
-### (V) Cox Regression for Menopause Age with Race, adjusting for education and intake_age
-cox_model_age <- coxph(Surv(menopause_age, menopause) ~ race + education, data = df)
+### (V) Cox Regression for Menopause Age with Race, adjusting for education, Handling Left Truncation
+cox_model_age <- coxph(Surv(intake_age, menopause_age, menopause) ~ race + education, data = df)
 summary(cox_model_age)
 
 # (Vb) Relative risk estimates for Black vs Other controlling for education
@@ -157,38 +163,41 @@ dd <- df
 dd$race <- relevel(factor(df$race), ref = "Other Ethnicity")
 
 # Fit the Cox model with new reference group
-cox_model_ref_other <- coxph(Surv(menopause_age, menopause) ~ race + education, data = dd)
+cox_model_ref_other <- coxph(Surv(intake_age, menopause_age, menopause) ~ race + education, data = dd)
 
-# Display model summary
 summary(cox_model_ref_other)
 
 # Extract coefficients and standard errors
-coef_black <- coef(cox_model_age)["raceBlack non-Hispanic"]
-coef_other <- coef(cox_model_age)["raceOther Ethnicity"]
-SE_black <- summary(cox_model_age)$coef["raceBlack non-Hispanic", "se(coef)"]
-SE_other <- summary(cox_model_age)$coef["raceOther Ethnicity", "se(coef)"]
-
-# Compute log HR ratio and standard error
-log_HR_ratio <- coef_black - coef_other
-SE_log_HR_ratio <- sqrt(SE_black^2 + SE_other^2)
-
-# Compute 95% CI
-lower_CI <- exp(log_HR_ratio - 1.96 * SE_log_HR_ratio)
-upper_CI <- exp(log_HR_ratio + 1.96 * SE_log_HR_ratio)
-
-# Print results
-cat("HR Ratio (Black vs. Other Ethnicity):", exp(log_HR_ratio), "\n")
-cat("95% Confidence Interval: (", lower_CI, ",", upper_CI, ")\n")
-
-vcov_matrix <- vcov(cox_model_age)
-vcov_matrix["raceBlack non-Hispanic", "raceOther Ethnicity"]
+#coef_black <- coef(cox_model_age)["raceBlack non-Hispanic"]
+#coef_other <- coef(cox_model_age)["raceOther Ethnicity"]
+#SE_black <- summary(cox_model_age)$coef["raceBlack non-Hispanic", #"se(coef)"]
+#SE_other <- summary(cox_model_age)$coef["raceOther Ethnicity", #"se(coef)"]
+#
+## Compute log HR ratio and standard error
+#log_HR_ratio <- coef_black - coef_other
+#SE_log_HR_ratio <- sqrt(SE_black^2 + SE_other^2)
+#
+## Compute 95% CI
+#lower_CI <- exp(log_HR_ratio - 1.96 * SE_log_HR_ratio)
+#upper_CI <- exp(log_HR_ratio + 1.96 * SE_log_HR_ratio)
+#
+## Print results
+#cat("HR Ratio (Black vs. Other Ethnicity):", exp(log_HR_ratio), "\n")
+#cat("95% Confidence Interval: (", lower_CI, ",", upper_CI, ")\n")
+#
+#vcov_matrix <- vcov(cox_model_age)
+#vcov_matrix["raceBlack non-Hispanic", "raceOther Ethnicity"]
 
 
 # (Vc) Baseline survival function for White non-Hispanic with Post-graduate education
 base_surv <- survfit(cox_model_age, newdata = data.frame(race = "White non-Hispanic", education = "Post-graduate"))
 summary(base_surv)
 
-ggsurvplot(base_surv, conf.inf = T, data=df,ggtheme = theme_classic(), xlab="Menopause Age (years)", ylab="Baseline Survival Probability")
+cat("Estimated median menopause age (Kaplan-Meier):", summary(base_surv)$table["median"], "years.\n")
+
+p <- ggsurvplot(base_surv, conf.inf = T, data=df,xlim=c(44,60),ggtheme = theme_classic(), xlab="Menopause Age (years)", ylab="Baseline Survival Probability", legend = "none")
+p$plot +
+  scale_x_continuous(breaks = seq(44, 60, by = 1)) 
 
 # (Vd) Check proportional hazards assumption
 cox.zph(cox_model_age)

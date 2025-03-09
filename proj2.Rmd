@@ -2,7 +2,7 @@
 title: "proj2"
 author: "Jiayi Shi"
 date: "2025-03-08"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}

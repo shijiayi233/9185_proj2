@@ -41,32 +41,41 @@ label(data$race) <- "Ethnicity"
 label(data$education) <- "Education Level"
 
 table1(~ intake_age+menopause_age+race+education | menopause, data, overall = F)
+
+df <- data %>% 
+  mutate(menopause = as.numeric(menopause))
 ```
 
 ```{r A1a}
 ### (Ia) Estimate the median menopause time assuming an exponential distribution
-
-# Number of observations
-n <- nrow(data)
+mod1 <- survreg(Surv(menopause_time, menopause) ~ 1, data=df, dist="exponential")
+lamda <- exp(-summary(mod1)$coef)
+est <- log(2) / lamda ##12.2
+predict(mod1, type = "quantile", p = 0.5, se.fit = TRUE)
+ciTools::add_quantile(df, mod1, p = 0.5, names = c("Median", "Lower", "Upper"))
+## (10.09,14.75)
 # Estimate lambda (rate parameter)
-lambda_hat <- 1 / mean(data$menopause_time)
+N <- nrow(data)
+r <- sum(data$menopause=="Menopause")
+lambda_hat <- 1 / (sum(data$menopause_time)/r)
 # Estimate the median menopause time
-median_estimate <- log(2) / lambda_hat
+median_est <- log(2) / lambda_hat
 # Compute standard error using the Delta Method
-se_median <- log(2) / (lambda_hat * sqrt(n))
+se_median <- log(2) / (lambda_hat * sqrt(r))
 # Compute the 95% confidence interval
-ci_lower <- median_estimate - 1.96 * se_median
-ci_upper <- median_estimate + 1.96 * se_median
+ci_lower <- median_est - 1.96 * se_median
+ci_upper <- median_est + 1.96 * se_median
 cat("Estimated median menopause time (Exponential):", median_estimate, "\n")
 cat("95% CI:", c(ci_lower, ci_upper), "\n")
+
+
 ```
 
 ```{r A1b}
 ### (Ib) Compute Kaplan-Meier survival estimate
-df <- data %>% 
-  mutate(menopause = as.numeric(menopause))
 
 km_fit <- survfit(Surv(menopause_time, menopause) ~ 1, data = df)
+summary(km_fit)
 
 # Extract survival data from the Kaplan-Meier fit
 km_data <- data.frame(time = km_fit$time,
@@ -93,8 +102,14 @@ cat("Estimated median time to menopause (Kaplan-Meier):", summary(km_fit)$table[
 # Fit the Cox proportional hazards model
 cox_model <- coxph(Surv(menopause_time, menopause) ~ race + education + intake_age, data = df)
 
+cox_model2 <- coxph(Surv(menopause_time, menopause) ~ intake_age, data = df)
+
+cox_model3 <- coxph(Surv(menopause_time, menopause) ~ education + intake_age, data = df)
+
 # Display model summary
 summary(cox_model)
+
+anova(cox_model2,cox_model)
 
 # Plot Schoenfeld residuals to visualize proportional hazards assumption
 cox.zph_test <- cox.zph(cox_model)
@@ -106,6 +121,8 @@ ggcoxzph(cox.zph_test)
 ```{r B3}
 ### (III) Compute Kaplan-Meier for menopause_age
 km_fit_age <- survfit(Surv(intake_age, menopause_age, menopause) ~ 1, data = df)
+
+summary(km_fit_age)
 
 # Extract survival data from the Kaplan-Meier fit
 km_data <- data.frame(time = km_fit_age$time,
@@ -127,7 +144,8 @@ ggplot(km_data, aes(x = time, y = survival)) +
 cat("Estimated median menopause age (Kaplan-Meier):", summary(km_fit_age)$table["median"], "years.\n")
 
 # Assume exponential distribution
-lambda_hat <- 1 / mean(data$menopause_age)  # MLE for exponential rate
+lambda_hat <- 1 / (sum(data$menopause_age)/sum(data$menopause=="Menopause"))
+
 median_exp <- log(2) / lambda_hat
 cat("Estimated Median (Exponential Model):", median_exp, "years.\n")
 
@@ -148,7 +166,9 @@ km_plot$plot +
 
 # Generalized Log-rank test
 ## Gehan-Breslow-Wilcoxon Test (Early Failures Weighted Higher)
-survdiff(Surv(menopause_age, menopause) ~ race, data = df, rho = 1)
+
+# Log-rank test
+survdiff(Surv(menopause_age, menopause) ~ race, data = df)
 #race not significant
 ```
 
@@ -156,6 +176,10 @@ survdiff(Surv(menopause_age, menopause) ~ race, data = df, rho = 1)
 ### (V) Cox Regression for Menopause Age with Race, adjusting for education, Handling Left Truncation
 cox_model_age <- coxph(Surv(intake_age, menopause_age, menopause) ~ race + education, data = df)
 summary(cox_model_age)
+
+cox_model_age_reduced <- coxph(Surv(intake_age, menopause_age, menopause) ~ education, data = df)
+
+anova(cox_model_age, cox_model_age_reduced, test = "LRT")
 
 # (Vb) Relative risk estimates for Black vs Other controlling for education
 
